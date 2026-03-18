@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from scipy.stats import norm
 
 from ui import section_header, apply_theme
 
@@ -34,20 +35,34 @@ def render_risk(initial_investment: int):
     var_95  = np.percentile(port_returns, 5)
     cvar_95 = port_returns[port_returns <= var_95].mean()
 
-    var_dol  = abs(var_95  * initial_investment)
-    cvar_dol = abs(cvar_95 * initial_investment)
+    # Cornish-Fisher VaR: adjusts for skewness and excess kurtosis
+    skew_r  = port_returns.skew()
+    kurt_r  = port_returns.kurtosis()          # excess kurtosis
+    z       = norm.ppf(0.05)
+    z_cf    = (z
+               + (z**2 - 1) * skew_r / 6
+               + (z**3 - 3*z) * kurt_r / 24
+               - (2*z**3 - 5*z) * skew_r**2 / 36)
+    var_cf  = port_returns.mean() + z_cf * port_returns.std()
+
+    var_dol    = abs(var_95  * initial_investment)
+    cvar_dol   = abs(cvar_95 * initial_investment)
+    var_cf_dol = abs(var_cf  * initial_investment)
 
     section_header(
         "Risk & Return Metrics",
         "Max-Sharpe portfolio weights applied to historical returns",
     )
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Sharpe Ratio",     f"{sharpe:.3f}")
-    m2.metric("Sortino Ratio",    f"{sortino:.3f}")
-    m3.metric("Max Drawdown",     f"{max_dd*100:.1f}%")
-    m4.metric("Daily VaR (95%)",  f"${var_dol:,.0f}")
-    m5.metric("Daily CVaR (95%)", f"${cvar_dol:,.0f}")
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Sharpe Ratio",       f"{sharpe:.3f}")
+    m2.metric("Sortino Ratio",      f"{sortino:.3f}")
+    m3.metric("Max Drawdown",       f"{max_dd*100:.1f}%")
+    m4.metric("Daily VaR (95%)",    f"${var_dol:,.0f}")
+    m5.metric("Daily CVaR (95%)",   f"${cvar_dol:,.0f}")
+    m6.metric("VaR CF-adjusted",    f"${var_cf_dol:,.0f}",
+              help="Cornish-Fisher VaR adjusts for skewness and fat tails. "
+                   "Higher than standard VaR = fatter left tail in your returns.")
 
     st.markdown("---")
 
@@ -117,6 +132,12 @@ def render_risk(initial_investment: int):
         annotation_text="95% VaR",
         annotation_position="top left",
         annotation_font=dict(color="#EF4444", size=10),
+    )
+    fig_ret.add_vline(
+        x=var_cf, line_dash="dot", line_color="#F97316",
+        annotation_text="VaR (CF)",
+        annotation_position="bottom left",
+        annotation_font=dict(color="#F97316", size=10),
     )
     apply_theme(fig_ret, height=320, showlegend=False)
     st.plotly_chart(fig_ret, use_container_width=True)
