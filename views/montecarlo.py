@@ -36,7 +36,7 @@ def render_montecarlo(mc_years: int, initial_investment: int, target_value: int)
         "Simulation Summary",
         f"Max-Sharpe portfolio — 1,000 bootstrap paths over {mc_years}Y horizon",
     )
-    st.caption("Simulation resamples from historical daily returns — no distribution assumed.")
+    st.caption("Paths are built by resampling actual historical daily returns, so fat tails and skew are preserved without assuming a normal distribution.")
 
     prob_goal  = (final_vals >= target_value).mean() * 100
     median_val = final_vals.median()

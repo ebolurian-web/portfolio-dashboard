@@ -16,9 +16,8 @@ def render_optimization():
     num_assets = len(tickers)
     ann_return = returns.mean() * 252
 
-    ewma_span  = st.slider("EWMA span (days)", min_value=20, max_value=120, value=60,
-                           help="Controls how quickly older observations are down-weighted. "
-                                "Lower = more responsive to recent volatility.")
+    ewma_span  = st.slider("EWMA span (days)", min_value=20, max_value=120, value=60)
+    st.caption("Lower span weights recent days more heavily — higher span smooths volatility across a longer window.")
     n          = len(returns.columns)
     cov_matrix = returns.ewm(span=ewma_span).cov().iloc[-n:].values * 252
 

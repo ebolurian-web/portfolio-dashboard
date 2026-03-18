@@ -60,9 +60,8 @@ def render_risk(initial_investment: int):
     m3.metric("Max Drawdown",       f"{max_dd*100:.1f}%")
     m4.metric("Daily VaR (95%)",    f"${var_dol:,.0f}")
     m5.metric("Daily CVaR (95%)",   f"${cvar_dol:,.0f}")
-    m6.metric("VaR CF-adjusted",    f"${var_cf_dol:,.0f}",
-              help="Cornish-Fisher VaR adjusts for skewness and fat tails. "
-                   "Higher than standard VaR = fatter left tail in your returns.")
+    m6.metric("VaR CF-adjusted",    f"${var_cf_dol:,.0f}")
+    st.caption("VaR (95%): max expected daily loss 95% of the time. CVaR: average loss on the worst 5% of days. CF-adjusted VaR corrects for skewness and fat tails — a higher value means standard VaR was understating your tail risk.")
 
     st.markdown("---")
 
