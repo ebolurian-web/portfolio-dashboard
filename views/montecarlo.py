@@ -19,18 +19,14 @@ def render_montecarlo(mc_years: int, initial_investment: int, target_value: int)
         np.ones(len(tickers)) / len(tickers),
     )
 
-    port_mu  = np.dot(opt_weights, returns.mean())
-    port_sig = np.sqrt(opt_weights @ returns.cov() @ opt_weights)
-
     trading_days = mc_years * 252
-    np.random.seed(42)
 
     sim_results = []
     for _ in range(1000):
-        dr   = np.random.normal(port_mu, port_sig, trading_days)
-        path = [initial_investment]
-        for r in dr:
-            path.append(path[-1] * (1 + r))
+        sampled = returns.sample(n=trading_days, replace=True)
+        port_r  = sampled.values @ opt_weights
+        path    = np.concatenate([[initial_investment],
+                                  initial_investment * np.cumprod(1 + port_r)])
         sim_results.append(path)
 
     sim_df     = pd.DataFrame(sim_results).T
@@ -38,8 +34,9 @@ def render_montecarlo(mc_years: int, initial_investment: int, target_value: int)
 
     section_header(
         "Simulation Summary",
-        f"Max-Sharpe portfolio — 1,000 paths over {mc_years}Y horizon",
+        f"Max-Sharpe portfolio — 1,000 bootstrap paths over {mc_years}Y horizon",
     )
+    st.caption("Paths are built by resampling actual historical daily returns, so fat tails and skew are preserved without assuming a normal distribution.")
 
     prob_goal  = (final_vals >= target_value).mean() * 100
     median_val = final_vals.median()

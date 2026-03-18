@@ -15,7 +15,11 @@ def render_optimization():
 
     num_assets = len(tickers)
     ann_return = returns.mean() * 252
-    cov_matrix = returns.cov()  * 252
+
+    ewma_span  = st.slider("EWMA span (days)", min_value=20, max_value=120, value=60)
+    st.caption("Lower span weights recent days more heavily — higher span smooths volatility across a longer window.")
+    n          = len(returns.columns)
+    cov_matrix = returns.ewm(span=ewma_span).cov().iloc[-n:].values * 252
 
     np.random.seed(42)
     results = []
@@ -34,7 +38,7 @@ def render_optimization():
 
     section_header(
         "Efficient Frontier",
-        "3,000 simulated portfolios — color denotes Sharpe ratio",
+        "3,000 simulated portfolios — EWMA covariance — color denotes Sharpe ratio",
     )
 
     fig_ef = px.scatter(
