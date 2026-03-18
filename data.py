@@ -23,9 +23,13 @@ def load_spy(start, end):
 
 @st.cache_data
 def load_fundamentals(tickers):
+    import time
     rows = []
     for t in tickers:
-        info = yf.Ticker(t).info
+        try:
+            info = yf.Ticker(t).info
+        except Exception:
+            info = {}
         rows.append({
             "Ticker":         t,
             "Sector":         info.get("sector",        "N/A"),
@@ -36,4 +40,5 @@ def load_fundamentals(tickers):
             "Debt / Equity":  info.get("debtToEquity",  None),
             "Dividend Yield": info.get("dividendYield", None),
         })
+        time.sleep(0.5)
     return pd.DataFrame(rows)
