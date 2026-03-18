@@ -1,3 +1,4 @@
+import re
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
@@ -6,6 +7,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy.optimize import minimize
+from datetime import date, datetime, timedelta
 
 # ── PAGE CONFIG ────────────────────────────────────────────────────
 st.set_page_config(
@@ -36,19 +38,58 @@ html, body, [class*="css"] {
 .stApp {
     background-color: #ffffff !important;
 }
-/* Hide Streamlit chrome — keep header structure so sidebar toggle is reachable */
+/* Hide Streamlit chrome entirely */
 #MainMenu, footer { visibility: hidden; }
 header[data-testid="stHeader"] {
-    background:    transparent !important;
-    border-bottom: none        !important;
-    box-shadow:    none        !important;
-    min-height:    0           !important;
+    background: transparent !important;
+    border:     none        !important;
+    box-shadow: none        !important;
+    height:     0           !important;
+    min-height: 0           !important;
+    overflow:   hidden      !important;
+    padding:    0           !important;
 }
-/* Hide only the visible toolbar content, not the whole header */
 [data-testid="stToolbar"],
 [data-testid="stDecoration"],
 [data-testid="stStatusWidget"],
-[data-testid="stMainMenuPopover"] { display: none !important; }
+[data-testid="stMainMenuPopover"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="stSidebarToggleButton"]   { display: none !important; }
+
+/* Remove top gap on main content */
+.block-container, [data-testid="block-container"] {
+    padding-top: 0.5rem !important;
+}
+
+/* Sidebar always visible — block every CSS-level collapse path */
+[data-testid="stSidebar"] {
+    transform:   translateX(0) !important;
+    display:     block         !important;
+    visibility:  visible       !important;
+    min-width:   245px         !important;
+}
+[data-testid="stSidebarContent"],
+[data-testid="stSidebarUserContent"] {
+    display:    flex    !important;
+    visibility: visible !important;
+}
+/* Hide every native collapse/toggle control */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="stSidebarToggleButton"],
+[data-testid="stSidebar"] button[aria-label*="ollapse"],
+[data-testid="stSidebar"] button[aria-label*="lose"],
+[data-testid="stSidebar"] button[kind="header"]   { display: none !important; }
+
+/* ── Layout: flush sidebar / smooth content shift ────────────── */
+[data-testid="stAppViewContainer"] {
+    gap: 0 !important;
+    padding: 0 !important;
+}
+[data-testid="stMain"] {
+    padding-left: 0 !important;
+    /* let Streamlit control margin-left; just make it animate smoothly */
+    transition: margin-left 0.3s ease !important;
+}
 
 /* ── Sidebar ──────────────────────────────────────── */
 [data-testid="stSidebar"] {
@@ -375,6 +416,73 @@ hr {
     font-family: Inter, sans-serif;
 }
 
+/* ── Sidebar content top padding ─────────────────── */
+[data-testid="stSidebarContent"] {
+    padding-top: 2rem !important;
+}
+
+/* ── Page header byline ───────────────────────────── */
+.page-header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.3rem;
+}
+.page-header-byline {
+    font-size: 0.54rem;
+    color: #9CA3AF;
+    letter-spacing: 0.08em;
+    font-family: Inter, sans-serif;
+    text-align: right;
+}
+
+/* ── Sidebar mode toggle ──────────────────────────── */
+div[data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] > div {
+    padding: 0 2px !important;
+}
+.sb-mode-wrap { display: flex; gap: 6px; margin-bottom: 0.25rem; }
+
+/* Active mode button */
+[data-testid="stSidebar"] .stButton button[kind="primary"] {
+    font-size: 0.62rem !important;
+    letter-spacing: 0.12em !important;
+    padding: 0.35rem 0 !important;
+    border-radius: 3px !important;
+}
+/* Inactive mode button */
+[data-testid="stSidebar"] .stButton button[kind="secondary"] {
+    font-size: 0.62rem !important;
+    letter-spacing: 0.12em !important;
+    padding: 0.35rem 0 !important;
+    border-radius: 3px !important;
+    background: white !important;
+    color: var(--muted) !important;
+    border: 1px solid var(--border) !important;
+}
+[data-testid="stSidebar"] .stButton button[kind="secondary"]:hover {
+    border-color: var(--blue) !important;
+    color: var(--blue) !important;
+}
+
+/* ── Sidebar chat bubbles ─────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stChatMessage"] {
+    padding: 0.1rem 0 !important;
+    background: transparent !important;
+}
+[data-testid="stSidebar"] [data-testid="stChatMessage"] p {
+    font-size: 0.78rem !important;
+    line-height: 1.45 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    color: var(--text) !important;
+    font-weight: 400 !important;
+}
+/* Disabled run button state */
+[data-testid="stSidebar"] .stButton button:disabled {
+    opacity: 0.4 !important;
+    cursor: not-allowed !important;
+}
+
 /* ── Sidebar header ───────────────────────────────── */
 .sidebar-header { padding: 0.4rem 0 1.1rem 0; }
 .sidebar-header-title {
@@ -540,16 +648,7 @@ components.html("""
             /* hero becomes the positioning context; canvas is clipped inside it */
             '.cover-hero { position:relative !important; overflow:hidden !important; }' +
             /* float all hero children above the canvas */
-            '.cover-hero > *:not(#mlp-lines) { position:relative !important; z-index:1 !important; }' +
-            /* custom sidebar tab */
-            '#mlp-tab { position:fixed; top:50vh; transform:translateY(-50%);' +
-            '  width:22px; height:64px; background:#1533F0; color:#fff;' +
-            '  border-radius:0 6px 6px 0; display:flex; align-items:center;' +
-            '  justify-content:center; cursor:pointer; z-index:99999;' +
-            '  font-size:16px; line-height:1; user-select:none;' +
-            '  box-shadow:3px 0 14px rgba(21,51,240,.30);' +
-            '  transition:left .25s ease, background .15s; }' +
-            '#mlp-tab:hover { background:#0f25c8; }';
+            '.cover-hero > *:not(#mlp-lines) { position:relative !important; z-index:1 !important; }';
         doc.head.appendChild(style);
 
         /* ── canvas absolutely positioned inside .cover-hero ── */
@@ -569,78 +668,16 @@ components.html("""
         doc.addEventListener('mousemove',  function (e) { mx = e.clientX; my = e.clientY; mouseOn = true; });
         doc.addEventListener('mouseleave', function ()  { mouseOn = false; });
 
-        /* ── sidebar toggle tab ── */
-        var tab   = doc.createElement('div');
-        tab.id    = 'mlp-tab';
-        tab.title = 'Toggle sidebar';
-        doc.body.appendChild(tab);
-
-        /* ── sidebar state detection ── */
-        function sidebarIsOpen() {
-            var sb = doc.querySelector('[data-testid="stSidebar"]');
-            if (!sb) return false;
-            var rect = sb.getBoundingClientRect();
-            /* sidebar is "open" only if its right edge is meaningfully on-screen
-               and it has substantial width (handles Streamlit margin-left and our own CSS) */
-            return rect.right > 100 && rect.width > 100;
-        }
-
-        function updateTab() {
-            if (sidebarIsOpen()) {
-                var w = doc.querySelector('[data-testid="stSidebar"]').getBoundingClientRect().width;
-                tab.style.left = w + 'px';
-                tab.innerHTML  = '&#x2039;';
-            } else {
-                tab.style.left = '0px';
-                tab.innerHTML  = '&#x203A;';
-            }
-        }
-
-        /* fire a React-compatible mouse click on an element */
-        function fireClick(el) {
-            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window.parent }));
-        }
-
-        /* shared toggle — exposed globally for inline onclick handlers */
-        function mlpToggle() {
-            /* 1. Collapsed-control div itself — present when sidebar is closed */
-            var cc = doc.querySelector('[data-testid="stSidebarCollapsedControl"]');
-            if (cc && cc.getBoundingClientRect().width > 0) { fireClick(cc); setTimeout(updateTab, 400); return; }
-
-            /* 2. Known button selectors */
-            var selectors = [
-                '[data-testid="stSidebarCollapsedControl"] button',
-                '[data-testid="collapsedControl"] button',
-                '[data-testid="stSidebarToggleButton"]',
-                '[data-testid="collapseSidebarButton"]',
-                '[data-testid="expandSidebarButton"]',
-            ];
-            for (var s = 0; s < selectors.length; s++) {
-                var el = doc.querySelector(selectors[s]);
-                if (el) { fireClick(el); setTimeout(updateTab, 400); return; }
-            }
-
-            /* 3. Broad scan — any button whose aria-label mentions "sidebar" */
-            var btns = doc.querySelectorAll('button');
-            for (var b = 0; b < btns.length; b++) {
-                var lbl = (btns[b].getAttribute('aria-label') || '').toLowerCase();
-                if (lbl.indexOf('sidebar') >= 0) { fireClick(btns[b]); setTimeout(updateTab, 400); return; }
-            }
-
-            /* 4. Last resort — CSS force-show/hide the sidebar and its content */
+        /* ── keep sidebar permanently open ── */
+        setInterval(function () {
             var sb = doc.querySelector('[data-testid="stSidebar"]');
             if (!sb) return;
-            if (sidebarIsOpen()) {
-                sb.style.setProperty('transform',  'translateX(-110%)', 'important');
-                sb.style.setProperty('transition',  'transform 0.3s ease', 'important');
-            } else {
-                /* override any Streamlit-applied transform or display:none */
-                sb.style.setProperty('transform',   'translateX(0)',     'important');
-                sb.style.setProperty('display',     'block',             'important');
-                sb.style.setProperty('visibility',  'visible',           'important');
-                sb.style.setProperty('min-width',   '245px',             'important');
-                sb.style.setProperty('transition',  'transform 0.3s ease', 'important');
-                /* force the inner content layer visible too */
+            var r = sb.getBoundingClientRect();
+            if (r.right < 60 || r.width < 60) {
+                sb.style.setProperty('transform',  'translateX(0)', 'important');
+                sb.style.setProperty('display',    'block',         'important');
+                sb.style.setProperty('visibility', 'visible',       'important');
+                sb.style.setProperty('min-width',  '245px',         'important');
                 var inner = sb.querySelector('[data-testid="stSidebarContent"]') ||
                             sb.querySelector('[data-testid="stSidebarUserContent"]') ||
                             sb.firstElementChild;
@@ -649,15 +686,7 @@ components.html("""
                     inner.style.setProperty('visibility', 'visible', 'important');
                 }
             }
-            setTimeout(updateTab, 400);
-        }
-
-        /* expose to parent window so st.markdown onclick handlers can call it */
-        window.parent.mlpToggleSidebar = mlpToggle;
-
-        tab.addEventListener('click', mlpToggle);
-        setInterval(updateTab, 400);
-        updateTab();
+        }, 200);
 
         syncSize(hero);
         draw(hero);
@@ -726,13 +755,161 @@ st.markdown(
     '<div class="page-header-eyebrow">Quantitative Research</div>'
     '<div class="page-header-title">Portfolio Analytics</div>'
     '</div>'
+    '<div class="page-header-right">'
     '<div class="page-header-badge">Interactive Suite ◈</div>'
+    '<div class="page-header-byline">By Eden Bolurian</div>'
+    '</div>'
     '</div>',
     unsafe_allow_html=True
 )
 
 
+# ── CHAT HELPERS ───────────────────────────────────────────────────
+_STOP = {'AND','OR','THE','A','I','MY','TO','FOR','IS','IN','OF','WITH',
+         'WANT','ANALYZE','PLEASE','SOME','PORTFOLIO','STOCKS','SHARES',
+         'FUND','ETF','LIKE','WOULD','CAN','YOU','ME','AT','BY','AS'}
+
+def _parse_tickers(text):
+    hits = re.findall(r'\b([A-Za-z]{1,5}(?:-[A-Za-z]{2,4})?)\b', text)
+    out  = [h.upper() for h in hits if h.upper() not in _STOP]
+    return out if out else None
+
+def _parse_date(text):
+    t = text.strip().lower()
+    if t in ('today', 'now', 'present'):
+        return date.today()
+    m = re.search(r'(\d+)\s*(year|yr)', t)
+    if m:
+        return (datetime.today() - timedelta(days=365 * int(m.group(1)))).date()
+    m = re.search(r'(\d+)\s*(month|mo)', t)
+    if m:
+        return (datetime.today() - timedelta(days=30 * int(m.group(1)))).date()
+    try:
+        return pd.to_datetime(text, dayfirst=True).date()
+    except Exception:
+        return None
+
+def _parse_money(text):
+    t = text.lower().replace(',', '').replace('$', '').replace(' ', '')
+    m = re.search(r'(\d+(?:\.\d+)?)\s*([km]?)', t)
+    if m:
+        v = float(m.group(1))
+        if m.group(2) == 'k': v *= 1_000
+        elif m.group(2) == 'm': v *= 1_000_000
+        return int(v)
+    return None
+
+def _parse_int(text, lo=1, hi=10):
+    m = re.search(r'\d+', text)
+    if m:
+        v = int(m.group())
+        if lo <= v <= hi:
+            return v
+    return None
+
+_Q = {
+    "tickers": "Which stocks would you like to analyze? Enter tickers separated by commas — e.g. **AAPL, MSFT, GOOGL**. Crypto works too (BTC-USD).",
+    "start":   "What **start date** for the analysis? (e.g. 01/01/2020 or '5 years ago')",
+    "end":     "And the **end date**? (e.g. today, or 31/12/2024)",
+    "invest":  "What is your **initial investment** amount? (e.g. $100,000 or 50k)",
+    "horizon": "How many **years ahead** for the Monte Carlo simulation? Enter a number from 1–10.",
+    "goal":    "Finally, what is your **target portfolio value**? (e.g. $200,000)",
+}
+
+def _chat_init():
+    if "chat_msgs" not in st.session_state:
+        st.session_state.chat_msgs = [
+            {"role": "assistant", "content":
+             "Hi! I'll set up your portfolio analysis through a few quick questions.\n\n" + _Q["tickers"]}
+        ]
+        st.session_state.chat_step = "tickers"
+        st.session_state.chat_vals = {}
+        st.session_state.chat_done = False
+
+def _chat_respond(user_input):
+    msgs = st.session_state.chat_msgs
+    step = st.session_state.chat_step
+    vals = st.session_state.chat_vals
+    msgs.append({"role": "user", "content": user_input})
+
+    if step == "tickers":
+        t = _parse_tickers(user_input)
+        if t:
+            vals["tickers_str"] = ", ".join(t)
+            st.session_state.chat_step = "start"
+            msgs.append({"role": "assistant", "content":
+                f"Got it — analyzing **{', '.join(t)}**.\n\n" + _Q["start"]})
+        else:
+            msgs.append({"role": "assistant", "content":
+                "I couldn't find any tickers. Try something like: AAPL, MSFT, GOOGL"})
+
+    elif step == "start":
+        d = _parse_date(user_input)
+        if d:
+            vals["start_date"] = d
+            st.session_state.chat_step = "end"
+            msgs.append({"role": "assistant", "content":
+                f"Start date: **{d.strftime('%d/%m/%Y')}**.\n\n" + _Q["end"]})
+        else:
+            msgs.append({"role": "assistant", "content":
+                "Couldn't parse that date. Try: 01/01/2020 or '5 years ago'"})
+
+    elif step == "end":
+        d = _parse_date(user_input)
+        if d:
+            vals["end_date"] = d
+            st.session_state.chat_step = "invest"
+            msgs.append({"role": "assistant", "content":
+                f"End date: **{d.strftime('%d/%m/%Y')}**.\n\n" + _Q["invest"]})
+        else:
+            msgs.append({"role": "assistant", "content":
+                "Couldn't parse that. Try: today, or 18/03/2026"})
+
+    elif step == "invest":
+        v = _parse_money(user_input)
+        if v and v > 0:
+            vals["investment"] = v
+            st.session_state.chat_step = "horizon"
+            msgs.append({"role": "assistant", "content":
+                f"Investment: **${v:,}**.\n\n" + _Q["horizon"]})
+        else:
+            msgs.append({"role": "assistant", "content":
+                "Try a number like $100,000 or 50k"})
+
+    elif step == "horizon":
+        v = _parse_int(user_input, 1, 10)
+        if v:
+            vals["horizon"] = v
+            st.session_state.chat_step = "goal"
+            msgs.append({"role": "assistant", "content":
+                f"Horizon: **{v} year{'s' if v > 1 else ''}**.\n\n" + _Q["goal"]})
+        else:
+            msgs.append({"role": "assistant", "content":
+                "Please enter a whole number between 1 and 10."})
+
+    elif step == "goal":
+        v = _parse_money(user_input)
+        if v and v > 0:
+            vals["goal"] = v
+            st.session_state.chat_done = True
+            msgs.append({"role": "assistant", "content":
+                f"All set! Here's your configuration:\n\n"
+                f"**Tickers:** {vals['tickers_str']}\n\n"
+                f"**Period:** {vals['start_date'].strftime('%d/%m/%Y')} → {vals['end_date'].strftime('%d/%m/%Y')}\n\n"
+                f"**Investment:** ${vals['investment']:,}\n\n"
+                f"**Horizon:** {vals['horizon']} year{'s' if vals['horizon'] > 1 else ''}\n\n"
+                f"**Goal:** ${v:,}\n\n"
+                "Click **Run Analysis** below to begin."})
+        else:
+            msgs.append({"role": "assistant", "content":
+                "Try a number like $200,000 or 200k"})
+
+
 # ── SIDEBAR ────────────────────────────────────────────────────────
+_chat_init()
+if "sb_mode" not in st.session_state:
+    st.session_state.sb_mode = "Chat"
+
 with st.sidebar:
     st.markdown(
         '<div class="sidebar-header">'
@@ -742,39 +919,97 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-    st.markdown("---")
-
-    tickers_input = st.text_input(
-        "Tickers (comma separated)",
-        value="AAPL, MSFT, JPM, JNJ, XOM"
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start", value=pd.to_datetime("2020-01-01"), format="DD/MM/YYYY")
-    with col2:
-        end_date = st.date_input("End", value=pd.to_datetime("today"), format="DD/MM/YYYY")
-
-    initial_investment = st.number_input(
-        "Initial Investment ($)",
-        value=100000,
-        step=10000
-    )
-
-    mc_years = st.slider(
-        "Monte Carlo Horizon (Years)",
-        min_value=1, max_value=10, value=5
-    )
-
-    target_value = st.number_input(
-        "Goal Target Value ($)",
-        value=200000,
-        step=10000,
-        help="Probability of reaching this value is shown in Monte Carlo"
-    )
+    # ── Mode toggle ────────────────────────────────────
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("💬  Chat", use_container_width=True,
+                     type="primary" if st.session_state.sb_mode == "Chat" else "secondary",
+                     key="btn_chat"):
+            st.session_state.sb_mode = "Chat"
+            st.rerun()
+    with c2:
+        if st.button("⚙  Manual", use_container_width=True,
+                     type="primary" if st.session_state.sb_mode == "Manual" else "secondary",
+                     key="btn_manual"):
+            st.session_state.sb_mode = "Manual"
+            st.rerun()
 
     st.markdown("---")
-    run = st.button("Run Analysis", use_container_width=True)
+
+    # ── Chat mode ──────────────────────────────────────
+    if st.session_state.sb_mode == "Chat":
+        msg_box = st.container(height=400, border=False)
+        with msg_box:
+            for m in st.session_state.chat_msgs:
+                with st.chat_message(m["role"]):
+                    st.markdown(m["content"])
+
+        if not st.session_state.chat_done:
+            user_inp = st.chat_input("Type your answer…")
+            if user_inp:
+                _chat_respond(user_inp)
+                st.rerun()
+
+        # Restart button
+        if st.button("↺  Start over", use_container_width=True, key="chat_restart"):
+            for k in ["chat_msgs", "chat_step", "chat_vals", "chat_done"]:
+                st.session_state.pop(k, None)
+            st.rerun()
+
+        vals = st.session_state.chat_vals
+        tickers_input      = vals.get("tickers_str",  "AAPL, MSFT, JPM, JNJ, XOM")
+        start_date         = vals.get("start_date",   pd.to_datetime("2020-01-01").date())
+        end_date           = vals.get("end_date",     date.today())
+        initial_investment = vals.get("investment",   100000)
+        mc_years           = vals.get("horizon",      5)
+        target_value       = vals.get("goal",         200000)
+
+        st.markdown("---")
+        run = st.button("▶  Run Analysis", use_container_width=True,
+                        disabled=not st.session_state.chat_done,
+                        key="run_chat")
+
+    # ── Manual mode ────────────────────────────────────
+    else:
+        _v = st.session_state.get("chat_vals", {})
+        tickers_input = st.text_input(
+            "Tickers (comma separated)",
+            value=_v.get("tickers_str", "AAPL, MSFT, JPM, JNJ, XOM"),
+            key="man_tickers"
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input(
+                "Start",
+                value=_v.get("start_date", pd.to_datetime("2020-01-01").date()),
+                format="DD/MM/YYYY", key="man_start"
+            )
+        with col2:
+            end_date = st.date_input(
+                "End",
+                value=_v.get("end_date", date.today()),
+                format="DD/MM/YYYY", key="man_end"
+            )
+
+        initial_investment = st.number_input(
+            "Initial Investment ($)",
+            value=_v.get("investment", 100000),
+            step=10000, key="man_invest"
+        )
+        mc_years = st.slider(
+            "Monte Carlo Horizon (Years)",
+            min_value=1, max_value=10,
+            value=_v.get("horizon", 5), key="man_horizon"
+        )
+        target_value = st.number_input(
+            "Goal Target Value ($)",
+            value=_v.get("goal", 200000),
+            step=10000, key="man_goal",
+            help="Probability of reaching this value is shown in Monte Carlo"
+        )
+
+        st.markdown("---")
+        run = st.button("Run Analysis", use_container_width=True, key="run_manual")
 
 
 
